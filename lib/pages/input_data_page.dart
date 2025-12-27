@@ -14,6 +14,7 @@ class InputDataPage extends StatefulWidget {
 
 class _InputDataPageState extends State<InputDataPage> {
   final _jumlahController = TextEditingController();
+  final _bahanBaruController = TextEditingController();
   final _storage = const FlutterSecureStorage();
   String _selectedUnit = 'Kilogram (kg)';
   String? _selectedFile;
@@ -23,6 +24,39 @@ class _InputDataPageState extends State<InputDataPage> {
   // Bahan selection
   List<Map<String, dynamic>> _bahanList = [];
   int? _selectedBahanId;
+  String? _selectedBahanName;
+
+  // Available units with mapping from backend format
+  final Map<String, String> _unitMapping = {
+    'gram': 'Gram (g)',
+    'g': 'Gram (g)',
+    'kilogram': 'Kilogram (kg)',
+    'kg': 'Kilogram (kg)',
+    'liter': 'Liter (L)',
+    'l': 'Liter (L)',
+    'mililiter': 'Mililiter (ml)',
+    'ml': 'Mililiter (ml)',
+    'butir': 'Butir',
+    'bungkus': 'Bungkus',
+  };
+
+  final List<String> _availableUnits = [
+    'Gram (g)',
+    'Kilogram (kg)',
+    'Liter (L)',
+    'Mililiter (ml)',
+    'Butir',
+    'Bungkus',
+  ];
+
+  // Convert backend unit format to display format
+  String _normalizeUnit(String? unit) {
+    if (unit == null || unit.isEmpty) {
+      return 'Kilogram (kg)';
+    }
+    final normalized = _unitMapping[unit.toLowerCase().trim()];
+    return normalized ?? 'Kilogram (kg)';
+  }
 
   @override
   void initState() {
@@ -60,7 +94,10 @@ class _InputDataPageState extends State<InputDataPage> {
           // Set default selected bahan
           if (_bahanList.isNotEmpty) {
             _selectedBahanId = _bahanList[0]['id'] as int?;
-            _selectedUnit = _bahanList[0]['unit'] ?? 'Kilogram (kg)';
+            _selectedBahanName = _bahanList[0]['nama'] as String?;
+            // Normalize unit from backend format to display format
+            String bahanUnit = _bahanList[0]['unit'] as String? ?? '';
+            _selectedUnit = _normalizeUnit(bahanUnit);
           }
         });
       } else {
@@ -79,6 +116,7 @@ class _InputDataPageState extends State<InputDataPage> {
   @override
   void dispose() {
     _jumlahController.dispose();
+    _bahanBaruController.dispose();
     super.dispose();
   }
 
@@ -100,6 +138,92 @@ class _InputDataPageState extends State<InputDataPage> {
         duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  void _showDialogBahanBaru() {
+    _bahanBaruController.clear();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Buat Bahan Baru'),
+          content: TextField(
+            controller: _bahanBaruController,
+            decoration: InputDecoration(
+              hintText: 'Nama bahan (contoh: Bawang Merah)',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            maxLines: 1,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                final namaBahan = _bahanBaruController.text.trim();
+                if (namaBahan.isEmpty) {
+                  _showErrorSnackbar('Nama bahan tidak boleh kosong');
+                  return;
+                }
+                Navigator.pop(context);
+                _tambahkanBahanBaru(namaBahan);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5B5BF5),
+              ),
+              child: const Text('Buat', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _tambahkanBahanBaru(String namaBahan) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final token = await _storage.read(key: 'auth_token');
+
+      if (token == null) {
+        _showErrorSnackbar('Token tidak ditemukan. Silakan login lagi');
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final response = await http
+          .post(
+            Uri.parse('${ApiService.baseUrl}/stok'),
+            headers: {
+              'Authorization': 'Bearer $token',
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'nama': namaBahan,
+              'unit': 'Kilogram (kg)', // Default unit
+              'stok': 0,
+            }),
+          )
+          .timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 201 || response.statusCode == 200) {
+        _showSuccessSnackbar('Bahan "$namaBahan" berhasil dibuat!');
+        // Reload bahan list
+        await _loadBahanList();
+      } else {
+        final errorBody = jsonDecode(response.body);
+        _showErrorSnackbar(errorBody['message'] ?? 'Gagal membuat bahan baru');
+      }
+    } catch (e) {
+      debugPrint('Error creating bahan: $e');
+      _showErrorSnackbar('Error: $e');
+    } finally {
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _tambahkanItem() async {
@@ -146,7 +270,8 @@ class _InputDataPageState extends State<InputDataPage> {
                   'Content-Type': 'application/json',
                 },
                 body: jsonEncode({
-                  'bahan_id': _selectedBahanId, // Kirim bahan_id
+                  'bahan_nama':
+                      _selectedBahanName, // Send ingredient name to support auto-creation
                   'jumlah': double.parse(jumlah),
                   'unit': _selectedUnit,
                   'tipe': 'masuk', // Input = masuk
@@ -168,7 +293,7 @@ class _InputDataPageState extends State<InputDataPage> {
         throw Exception('Failed to get response after $maxRetries attempts');
       }
 
-      if (response!.statusCode == 201) {
+      if (response?.statusCode == 201) {
         final selectedBahan =
             _bahanList.firstWhere((b) => b['id'] == _selectedBahanId);
         final namaBahan = selectedBahan['nama'] as String? ?? 'Unknown';
@@ -182,6 +307,7 @@ class _InputDataPageState extends State<InputDataPage> {
           _selectedUnit = 'Kilogram (kg)';
           if (_bahanList.isNotEmpty) {
             _selectedBahanId = _bahanList[0]['id'] as int?;
+            _selectedBahanName = _bahanList[0]['nama'] as String?;
           }
         });
 
@@ -196,7 +322,7 @@ class _InputDataPageState extends State<InputDataPage> {
               context, true); // Return true to indicate data was added
         }
       } else {
-        final errorData = jsonDecode(response!.body);
+        final errorData = jsonDecode(response?.body ?? '{}');
         _showErrorSnackbar('Gagal menyimpan: ${errorData['error']}');
       }
     } on TimeoutException {
@@ -291,13 +417,29 @@ class _InputDataPageState extends State<InputDataPage> {
                   const SizedBox(height: 16),
 
                   // Nama Bahan
-                  const Text(
-                    'Nama Bahan',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.black,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Nama Bahan',
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.black,
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: _showDialogBahanBaru,
+                        child: const Text(
+                          '+ Buat Baru',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF5B5BF5),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   if (_isLoadingBahan)
@@ -367,8 +509,12 @@ class _InputDataPageState extends State<InputDataPage> {
                                 _bahanList.firstWhere((b) => b['id'] == value);
                             setState(() {
                               _selectedBahanId = value;
-                              _selectedUnit =
-                                  selectedBahan['unit'] ?? 'Kilogram (kg)';
+                              _selectedBahanName =
+                                  selectedBahan['nama'] as String?;
+                              // Normalize unit from backend format to display format
+                              String bahanUnit =
+                                  selectedBahan['unit'] as String? ?? '';
+                              _selectedUnit = _normalizeUnit(bahanUnit);
                             });
                           }
                         },
@@ -474,14 +620,7 @@ class _InputDataPageState extends State<InputDataPage> {
                       filled: true,
                       fillColor: Colors.white,
                     ),
-                    items: [
-                      'Gram (g)',
-                      'Kilogram (kg)',
-                      'Liter (L)',
-                      'Mililiter (ml)',
-                      'Butir',
-                      'Bungkus',
-                    ]
+                    items: _availableUnits
                         .map((unit) => DropdownMenuItem(
                               value: unit,
                               child: Text(

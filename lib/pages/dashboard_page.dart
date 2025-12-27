@@ -21,7 +21,12 @@ class DashboardPageState extends State<DashboardPage> {
   @override
   void initState() {
     super.initState();
-    loadBahanData();
+    // Load data after widget is built (non-blocking)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        loadBahanData();
+      }
+    });
   }
 
   Future<void> loadBahanData() async {
@@ -34,12 +39,15 @@ class DashboardPageState extends State<DashboardPage> {
       final token = await storage.read(key: 'auth_token');
 
       if (token == null) {
+        debugPrint('❌ Token not found in storage');
         setState(() {
           _errorMessage = 'Token tidak ditemukan. Silakan login lagi.';
           _isLoading = false;
         });
         return;
       }
+
+      debugPrint('✅ Token found: ${token.substring(0, 20)}...');
 
       // Retry logic untuk handle Windows server issues
       http.Response? response;
@@ -48,6 +56,7 @@ class DashboardPageState extends State<DashboardPage> {
 
       while (retries < maxRetries && response == null) {
         try {
+          debugPrint('📡 Attempt ${retries + 1}/3 to fetch /stock-records...');
           response = await http.get(
             Uri.parse('${ApiService.baseUrl}/stock-records'),
             headers: {
@@ -69,6 +78,8 @@ class DashboardPageState extends State<DashboardPage> {
         throw Exception('Failed to get response after $maxRetries attempts');
       }
 
+      debugPrint('📊 Response Code: ${response.statusCode}');
+
       if (response.statusCode == 200) {
         final responseData = jsonDecode(response.body);
         final bahanData = List<Map<String, dynamic>>.from(responseData['data']);
@@ -80,29 +91,31 @@ class DashboardPageState extends State<DashboardPage> {
         setState(() {
           _bahanList = bahanData;
           _isLoading = false;
+          _errorMessage = null;
         });
 
         debugPrint('✅ Loaded ${_bahanList.length} stock records from API');
       } else if (response.statusCode == 401) {
-        setState(() {
-          _errorMessage = 'Sesi Anda telah berakhir. Silakan login lagi.';
-          _isLoading = false;
-        });
-        // Redirect to login
+        // Clear token and redirect to login
+        await storage.delete(key: 'auth_token');
         if (mounted) {
           Navigator.pushReplacementNamed(context, '/login');
         }
       } else {
+        // Show error but don't redirect
         setState(() {
           _errorMessage =
-              'Gagal mengambil data: ${response?.statusCode ?? "Unknown"}';
+              'Gagal mengambil data: ${response?.statusCode ?? "Unknown"}\n\nResponse: ${response?.body ?? "No response body"}';
           _isLoading = false;
         });
+        debugPrint('❌ Error Response: ${response?.body}');
       }
     } catch (e) {
       debugPrint('❌ Error loading bahan: $e');
+      debugPrint('❌ Full error: ${e.runtimeType}');
+      if (!mounted) return;
       setState(() {
-        _errorMessage = 'Error: ${e.toString()}';
+        _errorMessage = 'Error loading data:\n$e';
         _isLoading = false;
       });
     }

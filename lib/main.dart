@@ -1,6 +1,8 @@
 ﻿import 'package:flutter/material.dart';
 import 'pages/login_page.dart';
 import 'pages/home_shell.dart';
+import 'pages/prediksi_detail_page.dart';
+import 'pages/notifications_page.dart';
 
 void main() {
   runApp(const PrediksiStokApp());
@@ -22,7 +24,10 @@ class PrediksiStokApp extends StatelessWidget {
       ),
       home: const LoginPage(),
       routes: {
+        '/login': (context) => const LoginPage(),
         '/dashboard': (context) => const HomeShell(),
+        '/prediksi-detail': (context) => const PrediksiDetailPage(),
+        '/notifications': (context) => const NotificationsPage(),
       },
       debugShowCheckedModeBanner: false,
     );

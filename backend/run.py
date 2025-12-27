@@ -1,17 +1,36 @@
+import os
+import sys
+
+# Clear problematic environment variables
+if 'WERKZEUG_RUN_MAIN' in os.environ:
+    del os.environ['WERKZEUG_RUN_MAIN']
+if 'WERKZEUG_SERVER_FD' in os.environ:
+    del os.environ['WERKZEUG_SERVER_FD']
+
+# Set proper environment
+os.environ['FLASK_ENV'] = 'production'
+os.environ['FLASK_DEBUG'] = '0'
+
+# NOW import Flask after env vars are set
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from model import predictor
+from prediction_service import prediction_service
 from database import db, init_db, seed_db, User, Bahan, StockRecord, Notification
-import os
 from datetime import datetime, timedelta
 import jwt
 from functools import wraps
-from dotenv import load_dotenv
 
-# Load environment variables
-load_dotenv()
+# DO NOT use load_dotenv - configure everything explicitly
+# from dotenv import load_dotenv
+# load_dotenv()
 
 app = Flask(__name__)
+
+# Explicitly disable debug mode
+app.debug = False
+app.testing = False
+app.config['ENV'] = 'production'
 
 # Database Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'mysql+pymysql://root:@127.0.0.1:3306/prediksi_stok_kue')
@@ -61,8 +80,11 @@ def token_required(f):
 def root():
     return jsonify({'status': 'ok', 'message': 'BakeSmart API'}), 200
 
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        return '', 204
+        
     print("=== LOGIN REQUEST RECEIVED ===")
     try:
         print("Step 1: Getting JSON")
@@ -80,20 +102,28 @@ def login():
         print("Step 4b: Querying database")
         user = User.query.filter_by(email=email).first()
         print(f"Step 5: User={user}")
+        print(f"Step 5b: User password={user.password if user else 'N/A'}")
+        print(f"Step 5c: Input password={password}")
         
-        if not user or user.password != password:
-            print("Step 6a: Invalid credentials")
+        if not user:
+            print("Step 6a: User not found")
+            return jsonify({'error': 'Email atau password salah'}), 401
+            
+        if user.password != password:
+            print("Step 6b: Password mismatch")
+            print(f"  Expected: {user.password}")
+            print(f"  Got: {password}")
             return jsonify({'error': 'Email atau password salah'}), 401
         
         if not user.is_active:
-            print("Step 6b: User not active")
+            print("Step 6c: User not active")
             return jsonify({'error': 'User tidak aktif'}), 403
             
         print("Step 7: Creating JWT token")
         token = jwt.encode({
             'email': email,
             'exp': datetime.utcnow() + app.config['JWT_ACCESS_TOKEN_EXPIRES']
-        }, app.config['SECRET_KEY'])
+        }, app.config['SECRET_KEY'], algorithm="HS256")
         
         print(f"Step 8: Login success")
         return jsonify({
@@ -175,6 +205,50 @@ def get_stok(current_user):
         return jsonify({'data': data}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/stok', methods=['POST'])
+@token_required
+def create_bahan(current_user):
+    """Create bahan baru"""
+    try:
+        data = request.get_json()
+        
+        # Validate input
+        if not data or 'nama' not in data:
+            return jsonify({'message': 'Nama bahan diperlukan'}), 400
+        
+        nama = data.get('nama', '').strip()
+        if not nama:
+            return jsonify({'message': 'Nama bahan tidak boleh kosong'}), 400
+        
+        # Check if bahan already exists
+        existing_bahan = Bahan.query.filter_by(nama=nama).first()
+        if existing_bahan:
+            return jsonify({'message': 'Bahan dengan nama ini sudah ada'}), 400
+        
+        # Create new bahan
+        new_bahan = Bahan(
+            nama=nama,
+            unit=data.get('unit', 'Kilogram (kg)'),
+            stok_minimum=data.get('stok_minimum', 0),
+            stok_optimal=data.get('stok_optimal', 0),
+            harga_per_unit=data.get('harga_per_unit', 0)
+        )
+        
+        db.session.add(new_bahan)
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Bahan berhasil dibuat',
+            'data': {
+                'id': new_bahan.id,
+                'nama': new_bahan.nama,
+                'unit': new_bahan.unit
+            }
+        }), 201
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'message': f'Error: {str(e)}'}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
@@ -401,45 +475,108 @@ def logout(current_user):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# ===== ADVANCED PREDICTION ENDPOINTS =====
+
+@app.route('/prediksi-detail/<int:bahan_id>', methods=['GET'])
+@token_required
+def predict_material_detail(current_user, bahan_id):
+    """Get detailed prediction for a specific material"""
+    try:
+        bahan = Bahan.query.get(bahan_id)
+        
+        if not bahan:
+            return jsonify({'error': 'Material tidak ditemukan'}), 404
+        
+        # Get current stock from latest stock record
+        latest_record = StockRecord.query.filter_by(bahan_id=bahan_id).order_by(
+            StockRecord.tanggal.desc()
+        ).first()
+        
+        current_stock = latest_record.jumlah if latest_record else 0
+        
+        result = prediction_service.predict_material_detail(
+            bahan_id=bahan_id,
+            current_stock=current_stock,
+            stok_minimum=bahan.stok_minimum or 10,
+            stok_optimal=bahan.stok_optimal or 50,
+            harga_per_unit=bahan.harga_per_unit or 0,
+            recent_days=30
+        )
+        
+        return jsonify({
+            'data': result,
+            'bahan': {
+                'id': bahan.id,
+                'nama': bahan.nama,
+                'unit': bahan.unit,
+                'current_stock': current_stock,
+                'stok_minimum': bahan.stok_minimum,
+                'stok_optimal': bahan.stok_optimal,
+                'harga_per_unit': bahan.harga_per_unit
+            }
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'error': f'Kesalahan server: {str(e)}'}), 500
+
+@app.route('/prediksi-batch', methods=['GET'])
+@token_required
+def predict_batch(current_user):
+    """Get predictions for all materials"""
+    try:
+        bahans = Bahan.query.all()
+        results = []
+        
+        for bahan in bahans:
+            latest_record = StockRecord.query.filter_by(bahan_id=bahan.id).order_by(
+                StockRecord.tanggal.desc()
+            ).first()
+            
+            current_stock = latest_record.jumlah if latest_record else 0
+            
+            result = prediction_service.predict_material_detail(
+                bahan_id=bahan.id,
+                current_stock=current_stock,
+                stok_minimum=bahan.stok_minimum or 10,
+                stok_optimal=bahan.stok_optimal or 50,
+                harga_per_unit=bahan.harga_per_unit or 0,
+                recent_days=30
+            )
+            
+            if result['status'] == 'success':
+                result['bahan_nama'] = bahan.nama
+                results.append(result)
+        
+        # Sort by urgency (days_until_stockout)
+        results.sort(key=lambda x: (
+            x.get('days_until_stockout') is None,
+            x.get('days_until_stockout') or float('inf')
+        ))
+        
+        return jsonify({
+            'data': results,
+            'total': len(results),
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'error': f'Kesalahan server: {str(e)}'}), 500
+
 if __name__ == '__main__':
     import sys
     try:
-        # Initialize database (this can be done outside context)
+        # Initialize database
         init_db(app)
         seed_db(app)
         print("=" * 60)
         print("BakeSmart Backend Server")
         print("=" * 60)
         print("Database initialized")
-        print(f"Running on http://127.0.0.1:5000")
         print("=" * 60)
         sys.stdout.flush()
         
-        # Run with minimal config - use Threaded option but no debugger/reloader
-        from werkzeug.serving import run_simple
-        print("[DEBUG] About to call run_simple...")
-        sys.stdout.flush()
-        try:
-            run_simple(
-                '127.0.0.1',
-                5000,
-                app,
-                use_debugger=False,
-                use_reloader=False,
-                threaded=False  # Try without threading on Windows
-            )
-        except KeyboardInterrupt:
-            print("[INFO] Interrupted")
-            sys.exit(0)
-        except Exception as e:
-            print(f"[ERROR] Werkzeug failed: {e}")
-            import traceback
-            traceback.print_exc()
-            # Fallback to wsgiref
-            print("[INFO] Trying wsgiref fallback...")
-            from wsgiref.simple_server import make_server
-            httpd = make_server('127.0.0.1', 5000, app)
-            httpd.serve_forever()
+        # Run Flask app
+        app.run(host="0.0.0.0", port=5000)
     except Exception as e:
         print(f"Error: {e}")
         import traceback

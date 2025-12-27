@@ -76,8 +76,8 @@ class _OptimiasiStokPageState extends State<OptimiasiStokPage> {
             'Gagal terhubung ke server setelah $maxRetries percobaan');
       }
 
-      if (response!.statusCode == 200) {
-        final jsonResponse = jsonDecode(response!.body);
+      if (response?.statusCode == 200) {
+        final jsonResponse = jsonDecode(response?.body ?? '{}');
         final List<dynamic> bahanList = jsonResponse['data'] ?? [];
 
         setState(() {
@@ -87,7 +87,7 @@ class _OptimiasiStokPageState extends State<OptimiasiStokPage> {
 
         debugPrint(
             '✅ Loaded ${_optimasiList.length} optimasi records from API');
-      } else if (response!.statusCode == 401) {
+      } else if (response?.statusCode == 401) {
         setState(() {
           _errorMessage = 'Token expired. Silakan login kembali.';
           _isLoading = false;

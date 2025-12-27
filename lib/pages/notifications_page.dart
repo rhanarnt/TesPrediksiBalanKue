@@ -53,8 +53,6 @@ class _NotificationsPageState extends State<NotificationsPage> {
           final nama = bahan['nama'] as String? ?? 'Unknown';
           final currentStock =
               (bahan['current_stock'] as num?)?.toDouble() ?? 0.0;
-          final stokOptimal =
-              (bahan['stok_optimal'] as num?)?.toDouble() ?? 0.0;
 
           String? notifType;
           String? message;
