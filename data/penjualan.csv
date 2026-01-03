@@ -1,0 +1,5 @@
+jumlah,harga,permintaan,status_stok
+10,15000,12,Aman
+5,12000,7,Habis
+20,20000,18,Overstock
+15,18000,14,Aman

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Test Prediksi Stok Kue</title>
+  <meta name="theme-color" content="#0b1021">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 24px; color: #222; }
+    h2 { margin-top: 0; }
+    label { display: inline-block; width: 80px; }
+    input { padding: 6px 8px; }
+    button { padding: 6px 12px; cursor: pointer; }
+    .status { margin-top: 10px; height: 20px; color: #555; }
+    .error { color: #b00020; }
+    .card { margin-top: 16px; padding: 12px; background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 8px; max-width: 420px; }
+    .row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .result { font-weight: 600; }
+    pre { background: #0b1021; color: #d7e3ff; padding: 12px; border-radius: 6px; overflow: auto; max-width: 720px; }
+  </style>
+</head>
+<body>
+  <h2>Form Prediksi</h2>
+  <form id="prediksiForm" novalidate>
+    <label>Jumlah:</label>
+    <input type="number" id="jumlah" value="12" min="0" step="1" required>
+    <small id="errJumlah" class="error" style="display:none;">Masukkan jumlah >= 0</small>
+    <br><br>
+
+    <label>Harga:</label>
+    <input type="number" id="harga" value="16000" min="0" step="1" required>
+    <small id="errHarga" class="error" style="display:none;">Masukkan harga >= 0</small>
+    <br><br>
+
+    <button type="submit" id="kirimBtn">Kirim</button>
+  </form>
+
+  <div class="status" id="status"></div>
+
+  <h3>Hasil:</h3>
+  <div class="card" id="hasilCard" style="display:none;">
+    <div class="row">
+      <span>Prediksi Permintaan:</span>
+      <span class="result" id="prediksiVal">-</span>
+    </div>
+    <div class="row">
+      <span>Status Stok:</span>
+      <span class="result" id="statusStokVal" style="padding:2px 8px; border-radius:12px; background:#e9ecef;">-</span>
+    </div>
+  </div>
+  <details style="margin-top:10px;">
+    <summary>Lihat respons mentah</summary>
+    <pre id="hasil"></pre>
+  </details>
+
+  <script>
+    const form = document.getElementById("prediksiForm");
+    const statusEl = document.getElementById("status");
+    const btn = document.getElementById("kirimBtn");
+    const hasilPre = document.getElementById("hasil");
+    const hasilCard = document.getElementById("hasilCard");
+    const prediksiVal = document.getElementById("prediksiVal");
+    const statusStokVal = document.getElementById("statusStokVal");
+    const errJumlah = document.getElementById("errJumlah");
+    const errHarga = document.getElementById("errHarga");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      statusEl.className = "status";
+      statusEl.textContent = "Mengirim...";
+      hasilPre.textContent = "";
+      hasilCard.style.display = "none";
+      btn.disabled = true;
+
+      const jumlah = document.getElementById("jumlah").value;
+      const harga = document.getElementById("harga").value;
+
+      // Validasi sederhana di frontend
+      let valid = true;
+      const nJumlah = Number(jumlah);
+      const nHarga = Number(harga);
+      errJumlah.style.display = "none";
+      errHarga.style.display = "none";
+      if (!Number.isFinite(nJumlah) || nJumlah < 0) { errJumlah.style.display = "inline"; valid = false; }
+      if (!Number.isFinite(nHarga) || nHarga < 0) { errHarga.style.display = "inline"; valid = false; }
+      if (!valid) { statusEl.textContent = "Perbaiki input yang tidak valid"; btn.disabled = false; return; }
+
+      try {
+        const res = await fetch("http://127.0.0.1:5000/prediksi", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ jumlah: nJumlah, harga: nHarga })
+        });
+
+        const text = await res.text();
+        let data;
+        try { data = JSON.parse(text); } catch { data = { raw: text }; }
+
+        if (!res.ok) {
+          const msg = (data && (data.error || data.detail)) ? `${data.error}${data.detail ? ' - ' + data.detail : ''}` : res.statusText;
+          throw new Error(msg);
+        }
+
+        // Tampilkan formatted
+        const angka = typeof data.prediksi_permintaan === 'number' ? data.prediksi_permintaan.toFixed(2) : String(data.prediksi_permintaan);
+        prediksiVal.textContent = angka;
+        const label = (data.status_stok ?? '-').toString();
+        statusStokVal.textContent = label;
+        // Pewarnaan label status
+        const lower = label.toLowerCase();
+        let bg = '#e9ecef', color = '#111';
+        if (["aman", "lebih", "cukup"].some(k => lower.includes(k))) { bg = '#e6f4ea'; color = '#0c6b2a'; }
+        if (["risiko", "kurang", "bahaya", "perlu"].some(k => lower.includes(k))) { bg = '#fdeaea'; color = '#b00020'; }
+        statusStokVal.style.background = bg;
+        statusStokVal.style.color = color;
+        hasilCard.style.display = "block";
+
+        // Tampilkan raw JSON
+        hasilPre.textContent = JSON.stringify(data, null, 2);
+        statusEl.textContent = "Sukses";
+      } catch (err) {
+        statusEl.className = "status error";
+        statusEl.textContent = `Gagal: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    // Daftarkan service worker untuk PWA
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(console.error);
+      });
+    }
+  </script>
+</body>
+</html>

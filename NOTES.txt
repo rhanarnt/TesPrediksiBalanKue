@@ -1,0 +1,112 @@
+═══════════════════════════════════════════════════════════════════════════
+                     🍰 BAKESMART - FINAL NOTES
+═══════════════════════════════════════════════════════════════════════════
+
+✅ SOLVED: Koneksi Timeout Problem
+   Issue: Connection always timeout when emulator tries to login
+   Root Cause: IP address 10.0.2.2 tidak reliable untuk emulator ini
+   Solution: Ganti ke 192.168.1.20 (machine IP)
+   Result: ✅ Connection STABLE & TESTED
+
+═══════════════════════════════════════════════════════════════════════════
+
+🚀 TO RUN PROJECT:
+
+   Option 1 (EASIEST):
+   → Double-click file: START_ALL.bat
+   
+   Option 2 (MANUAL):
+   → cd prediksi_stok_kue\backend
+   → python start.py
+
+   Then wait 2-3 minutes for Flask to start.
+
+═══════════════════════════════════════════════════════════════════════════
+
+👤 LOGIN CREDENTIALS:
+
+   Email:    admin@bakesmart.com
+   Password: admin123
+
+═══════════════════════════════════════════════════════════════════════════
+
+📡 API ENDPOINTS:
+
+   Android Emulator:  http://192.168.1.20:5000/api
+   Browser/Desktop:   http://127.0.0.1:5000/api
+   Database:          http://localhost/phpmyadmin
+
+═══════════════════════════════════════════════════════════════════════════
+
+🔒 CRITICAL - DO NOT CHANGE:
+
+   File: prediksi_stok_kue/lib/services/api_service.dart
+   Line: 20
+   Value: return 'http://192.168.1.20:5000/api';
+   
+   ✅ This is the CORRECT IP
+   ❌ Do NOT change back to 10.0.2.2
+
+═══════════════════════════════════════════════════════════════════════════
+
+💾 DATABASE:
+
+   Type: MySQL/MariaDB
+   Database: prediksi_stok_kue
+   Auto-Initialize: YES (first run)
+   
+═══════════════════════════════════════════════════════════════════════════
+
+✅ TESTED SCENARIOS:
+
+   ✅ Backend starts successfully
+   ✅ MySQL auto-initializes
+   ✅ Flutter builds without errors
+   ✅ Login returns token (200 OK)
+   ✅ Data loads from API
+   ✅ Dashboard displays correctly
+   ✅ No connection timeout errors
+
+═══════════════════════════════════════════════════════════════════════════
+
+📚 DOCUMENTATION:
+
+   Quick Start:        START_HERE.txt
+   Full Guide:         HOW_TO_RUN.md
+   Full Config:        FINAL_CONFIGURATION.txt
+   Changes Made:       CONFIGURATION_LOG.md
+   All Docs:           INDEX.md
+
+═══════════════════════════════════════════════════════════════════════════
+
+❓ TROUBLESHOOTING:
+
+   Timeout Error?
+   → Verify backend is running (netstat -ano | findstr :5000)
+   → Verify IP in api_service.dart is 192.168.1.20
+   → Restart emulator
+
+   MySQL Error?
+   → Check phpMyAdmin: http://localhost/phpmyadmin
+   → Database should auto-create
+
+   Build Error?
+   → flutter clean && flutter pub get
+
+═══════════════════════════════════════════════════════════════════════════
+
+FOR NEXT TIME:
+
+   1. Open Android Emulator
+   2. Double-click START_ALL.bat
+   3. Login with admin@bakesmart.com / admin123
+   4. Present!
+
+   That's it! ✅
+
+═══════════════════════════════════════════════════════════════════════════
+
+LOCKED & TESTED ✅
+Configuration is FINAL. No changes needed.
+
+═══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dashboard Prediksi</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 24px; }
+    .wrap { max-width: 960px; margin: 0 auto; }
+    canvas { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
+    .meta { color: #555; margin-bottom: 12px; }
+    a { color: #0b5ed7; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h2>Dashboard Prediksi</h2>
+    <div class="meta">Sumber data: endpoint <code>/history</code>. <a href="/app">Kembali ke Form</a></div>
+    <div class="meta" style="display:flex; gap:10px; flex-wrap: wrap; align-items: center;">
+      <label>Start: <input type="date" id="start"></label>
+      <label>End: <input type="date" id="end"></label>
+      <label><input type="checkbox" id="weekly"> Mingguan</label>
+      <button id="apply">Terapkan</button>
+      <a id="csv" href="/history.csv" download>Unduh CSV</a>
+    </div>
+    <canvas id="chart" height="120"></canvas>
+  </div>
+
+  <script>
+    function buildQuery(params) {
+      const q = new URLSearchParams();
+      for (const [k,v] of Object.entries(params)) if (v) q.set(k, v);
+      return q.toString();
+    }
+
+    async function loadHistory({start, end, limit=50, weekly=false} = {}) {
+      const base = weekly ? '/history/weekly' : '/history';
+      const qs = buildQuery({ start, end, limit });
+      const res = await fetch(qs ? `${base}?${qs}` : base);
+      const rows = await res.json();
+      return rows;
+    }
+
+    function buildChart(rows) {
+      const labels = rows.map(r => new Date(r.created_at).toLocaleString());
+      const jumlah = rows.map(r => r.jumlah);
+      const harga = rows.map(r => r.harga);
+      const pred = rows.map(r => r.prediksi_permintaan);
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Jumlah', data: jumlah, borderColor: '#0c6b2a', backgroundColor: 'rgba(12,107,42,0.1)', tension: 0.25 },
+            { label: 'Harga', data: harga, borderColor: '#b00020', backgroundColor: 'rgba(176,0,32,0.1)', tension: 0.25, yAxisID: 'y1' },
+            { label: 'Prediksi Permintaan', data: pred, borderColor: '#0b5ed7', backgroundColor: 'rgba(11,94,215,0.1)', tension: 0.25 }
+          ]
+        },
+        options: {
+          interaction: { mode: 'index', intersect: false },
+          stacked: false,
+          scales: {
+            y: { title: { display: true, text: 'Jumlah/Prediksi' } },
+            y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Harga' } }
+          }
+        }
+      });
+    }
+
+    async function refresh() {
+      const start = document.getElementById('start').value || undefined;
+      const end = document.getElementById('end').value || undefined;
+      const weekly = document.getElementById('weekly').checked;
+      const rows = await loadHistory({ start, end, limit: 100, weekly });
+      // Update link CSV
+      const csv = document.getElementById('csv');
+      const qs = buildQuery({ start, end, limit: 1000 });
+      csv.href = qs ? `/history.csv?${qs}` : '/history.csv';
+
+      if (weekly) {
+        // Konversi data weekly ke bentuk chart
+        const labels = rows.map(r => `${r.week_start} s/d ${r.week_end}`);
+        const jumlah = rows.map(r => Number(r.avg_jumlah));
+        const harga = rows.map(r => Number(r.avg_harga));
+        const pred = rows.map(r => Number(r.avg_prediksi));
+        buildChart({labels, jumlah, harga, pred});
+      } else {
+        rows.reverse();
+        const labels = rows.map(r => new Date(r.created_at).toLocaleString());
+        const jumlah = rows.map(r => r.jumlah);
+        const harga = rows.map(r => r.harga);
+        const pred = rows.map(r => r.prediksi_permintaan);
+        buildChart({labels, jumlah, harga, pred});
+      }
+    }
+
+    let chart;
+    function buildChart({labels, jumlah, harga, pred}) {
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (chart) chart.destroy();
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: 'Jumlah', data: jumlah, borderColor: '#0c6b2a', backgroundColor: 'rgba(12,107,42,0.1)', tension: 0.25 },
+            { label: 'Harga', data: harga, borderColor: '#b00020', backgroundColor: 'rgba(176,0,32,0.1)', tension: 0.25, yAxisID: 'y1' },
+            { label: 'Prediksi Permintaan', data: pred, borderColor: '#0b5ed7', backgroundColor: 'rgba(11,94,215,0.1)', tension: 0.25 }
+          ]
+        },
+        options: {
+          interaction: { mode: 'index', intersect: false },
+          stacked: false,
+          scales: {
+            y: { title: { display: true, text: 'Jumlah/Prediksi' } },
+            y1: { position: 'right', grid: { drawOnChartArea: false }, title: { display: true, text: 'Harga' } }
+          }
+        }
+      });
+    }
+
+    document.getElementById('apply').addEventListener('click', () => {
+      refresh().catch(err => alert('Gagal memuat data: ' + err.message));
+    });
+
+    refresh().catch(err => alert('Gagal memuat data dashboard: ' + err.message));
+  </script>
+</body>
+</html>
