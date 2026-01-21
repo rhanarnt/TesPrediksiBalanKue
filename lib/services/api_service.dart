@@ -9,14 +9,14 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 const storage = FlutterSecureStorage();
 
 class ApiService {
-  // Gunakan 127.0.0.1 untuk web dan sesuaikan untuk platform lain
+  // Untuk Android emulator, gunakan localhost dengan ADB reverse port forwarding
   static String get baseUrl {
     if (kIsWeb) {
-      return 'http://127.0.0.1:5000'; // Gunakan 127.0.0.1 untuk web
+      return 'http://127.0.0.1:5000'; // Web: localhost
     } else if (Platform.isAndroid) {
-      return 'http://10.0.2.2:5000'; // Untuk Android emulator
+      return 'http://localhost:5000'; // Android emulator dengan ADB reverse
     } else {
-      return 'http://127.0.0.1:5000'; // Untuk platform lain
+      return 'http://127.0.0.1:5000'; // Desktop (Windows/Linux/macOS)
     }
   }
 

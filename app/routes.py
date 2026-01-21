@@ -12,6 +12,12 @@ from .db import (
     upsert_stock,
     delete_stock,
 )
+from .auth import (
+    ensure_users_table,
+    authenticate_user,
+    generate_jwt_token,
+    require_auth,
+)
 
 routes = Blueprint("routes", __name__)
 
@@ -25,6 +31,73 @@ except:
 @routes.route("/")
 def home():
     return {"message": "API Prediksi Stok Kue siap digunakan"}
+
+
+# ============================
+#   Authentication Routes
+# ============================
+
+@routes.route("/login", methods=["POST"])
+def login():
+    """
+    Login endpoint - authenticate user and return JWT token
+    """
+    try:
+        # Ensure users table exists
+        try:
+            ensure_users_table()
+        except Exception as e:
+            print(f"[login] Failed to ensure users table: {e}")
+            return {"error": "Database error", "detail": str(e)}, 500
+
+        # Validasi content type
+        if not request.is_json:
+            return {"error": "Content-Type harus application/json"}, 400
+
+        data = request.get_json(silent=True)
+        if data is None:
+            return {"error": "Body JSON tidak valid"}, 400
+
+        # Validasi field
+        email = (data.get("email") or "").strip()
+        password = data.get("password") or ""
+
+        if not email or not password:
+            return {"error": "Email dan password wajib"}, 400
+
+        if "@" not in email or "." not in email:
+            return {"error": "Format email tidak valid"}, 400
+
+        # Authenticate
+        user = authenticate_user(email, password)
+        if not user:
+            print(f"[login] Authentication failed for email: {email}")
+            return {"error": "Email atau password salah"}, 401
+
+        # Generate token
+        token = generate_jwt_token(user["id"], user["email"])
+        print(f"[login] Authentication successful for: {email}")
+        return {
+            "token": token,
+            "user": user,
+        }, 200
+    
+    except Exception as e:
+        print(f"[login] Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"error": f"Internal server error: {str(e)}"}, 500
+
+
+@routes.route("/health")
+def health():
+    status = {
+        "status": "ok",
+        "model_regression": bool(lr),
+        "model_classifier": bool(rf)
+    }
+    return jsonify(status)
+
 
 @routes.route("/app")
 def app_page():
@@ -51,19 +124,11 @@ def offline_page():
     project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     return send_from_directory(project_root, "offline.html")
 
-@routes.route("/health")
-def health():
-    status = {
-        "status": "ok",
-        "model_regression": bool(lr),
-        "model_classifier": bool(rf)
-    }
-    return jsonify(status)
-
 @routes.route("/init-db")
 def init_db_route():
     ok = init_db()
     return ({"status": "ok"} if ok else {"status": "error"}), (200 if ok else 500)
+
 
 @routes.route("/history")
 def history():

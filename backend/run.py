@@ -48,12 +48,12 @@ app.config['JWT_ACCESS_TOKEN_EXPIRES'] = timedelta(hours=1)
 # Initialize Database
 db.init_app(app)
 
-# Konfigurasi CORS - lebih permisif untuk Web
+# Konfigurasi CORS - sederhana untuk development
+# PENTING: Jangan gunakan origins="*" dengan supports_credentials=True
+# Itu adalah kombinasi yang tidak valid menurut browser security policy
 CORS(app, 
-     origins="*",
      allow_headers=["Content-Type", "Authorization"],
-     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-     supports_credentials=True)
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 
 # Decorator untuk memeriksa token JWT
 def token_required(f):
